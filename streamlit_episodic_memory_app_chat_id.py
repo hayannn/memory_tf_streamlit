@@ -26,9 +26,9 @@ USE_FP16 = False
 MAX_LENGTH = 1024
 BATCH_SIZE = 2
 
-DEFAULT_MILVUS_URI = "./episodic_memory_local.db"
-DOC_COLLECTION_NAME = "policy_docs_demo"
-MEMORY_COLLECTION_NAME = "episodic_memory_demo"
+DEFAULT_MILVUS_URI = "./episodic_memory_local_dev.db"
+DOC_COLLECTION_NAME = "policy_docs_demo_dev"
+MEMORY_COLLECTION_NAME = "episodic_memory_demo_dev"
 
 DOC_TOP_K = 5
 MEMORY_TOP_K = 3
@@ -37,6 +37,15 @@ TRACK_KEYWORDS = [
     "청년", "중장년", "서울", "경기", "취업", "교육",
     "창업", "주거", "접수 중", "마감", "지원사업"
 ]
+
+def preprocess_query(q: str) -> str:
+    q = q.replace("있어?", "")
+    q = q.replace("있나요?", "")
+    q = q.replace("알려줘", "")
+    q = q.replace("뭐야", "")
+    q = q.strip()
+    return q
+
 
 CHAT_STORE_DIR = "./chat_store"
 os.makedirs(CHAT_STORE_DIR, exist_ok=True)
@@ -576,24 +585,51 @@ def rag_pipeline(
     doc_collection_name: str = DOC_COLLECTION_NAME,
     top_k: int = DOC_TOP_K,
 ):
+
+    # 1️⃣ query normalize
+    user_query = preprocess_query(user_query)
+
+    # 2️⃣ recall episodic memory
     recalled_eps = memory_store.recall(
         conversation_id=conversation_id,
         user_query=user_query,
         top_k=MEMORY_TOP_K,
     )
 
+    # 3️⃣ rewrite query
     rewritten_query = rewrite_query(user_query, recalled_eps)
+
     if not rewritten_query or not str(rewritten_query).strip():
         rewritten_query = user_query
 
     final_query_for_search = rewritten_query.strip()
-    q_vec = embedder.embed_query(final_query_for_search)
 
-    retrieved_docs = search_docs(client, doc_collection_name, q_vec, top_k=top_k)
+    # 4️⃣ rewrite fallback
+    if not final_query_for_search:
+        final_query_for_search = user_query
 
+    # 5️⃣ BGE instruction (검색 recall 증가)
+    search_query = "지원사업 정책 검색: " + final_query_for_search
+
+    # 6️⃣ embedding
+    q_vec = embedder.embed_query(search_query)
+
+    # 7️⃣ vector search
+    retrieved_docs = search_docs(
+        client,
+        doc_collection_name,
+        q_vec,
+        top_k=top_k
+    )
+
+    # 8️⃣ answer generation
     answer = generate_answer(user_query, retrieved_docs)
+
+    # 9️⃣ memory summary
     memory_text = summarize_memory(user_query, answer)
+
     memory_embedding = embedder.embed_memory(memory_text)
+
     answer_summary = " ".join(answer.split())[:120]
 
     episode = Episode(
@@ -606,6 +642,7 @@ def rag_pipeline(
         memory_text=memory_text,
         memory_embedding=memory_embedding,
     )
+
     memory_store.save(episode)
 
     recalled_memory_list = []
