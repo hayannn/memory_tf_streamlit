@@ -14,22 +14,19 @@ from openai import OpenAI
 # ---------------------------------------------------------------
 # 기본 설정
 # ---------------------------------------------------------------
-DEFAULT_BENE_PKL_PATH = "./data/kpfis_bene_embed_merged_200.pkl"
-DEFAULT_OP_PKL_PATH = "./data/kpfis_op_embed_merged_200.pkl"
+DEFAULT_BENE_PKL_PATH = "/home/dlgkd/dev2/TF/data/kpfis_bene_embed_merged_200.pkl"
+DEFAULT_OP_PKL_PATH = "/home/dlgkd/dev2/TF/data/kpfis_op_embed_merged_200.pkl"
 DEFAULT_RAW_JSON_PATH = ""
 
 EMBEDDING_MODE = "local_flagembedding"
-# MODEL_NAME = "BAAI/bge-m3"
-MODEL_NAME = "BAAI/bge-small-en-v1.5"
-VECTOR_DIM = 1024
-
+MODEL_NAME = "BAAI/bge-m3"
 USE_FP16 = False
 MAX_LENGTH = 1024
 BATCH_SIZE = 2
 
-DEFAULT_MILVUS_URI = "./episodic_memory_local_dev.db"
-DOC_COLLECTION_NAME = "policy_docs_demo_dev"
-MEMORY_COLLECTION_NAME = "episodic_memory_demo_dev"
+DEFAULT_MILVUS_URI = "./episodic_memory_local.db"
+DOC_COLLECTION_NAME = "policy_docs_demo"
+MEMORY_COLLECTION_NAME = "episodic_memory_demo"
 
 DOC_TOP_K = 5
 MEMORY_TOP_K = 3
@@ -41,6 +38,15 @@ TRACK_KEYWORDS = [
 
 CHAT_STORE_DIR = "./chat_store"
 os.makedirs(CHAT_STORE_DIR, exist_ok=True)
+
+
+def preprocess_query(q: str) -> str:
+    q = q.replace("있어?", "")
+    q = q.replace("있나요?", "")
+    q = q.replace("알려줘", "")
+    q = q.replace("뭐야", "")
+    q = q.strip()
+    return q
 
 
 # ---------------------------------------------------------------
@@ -107,59 +113,36 @@ class BaseEmbedder(ABC):
         return self.embed_texts([text])[0]
 
 
-# class LocalFlagEmbeddingEmbedder(BaseEmbedder):
-#     def __init__(
-#         self,
-#         model_name: str = MODEL_NAME,
-#         use_fp16: bool = USE_FP16,
-#         max_length: int = MAX_LENGTH,
-#         batch_size: int = BATCH_SIZE,
-#     ):
-#         from FlagEmbedding import BGEM3FlagModel
-
-#         self.model_name = model_name
-#         self.use_fp16 = use_fp16
-#         self.max_length = max_length
-#         self.batch_size = batch_size
-#         self.model = BGEM3FlagModel(model_name, use_fp16=use_fp16)
-
-#     def embed_texts(self, texts: List[str]) -> List[List[float]]:
-#         if not texts:
-#             return []
-
-#         out = self.model.encode(
-#             texts,
-#             batch_size=self.batch_size,
-#             max_length=self.max_length,
-#             return_dense=True,
-#             return_sparse=False,
-#             return_colbert_vecs=False,
-#         )
-#         dense = out["dense_vecs"]
-#         return [list(map(float, vec)) for vec in dense]
-
 class LocalFlagEmbeddingEmbedder(BaseEmbedder):
-    def __init__(self, model_name: str = MODEL_NAME):
-        from FlagEmbedding import FlagModel
-        self.model = FlagModel(model_name)
+    def __init__(
+        self,
+        model_name: str = MODEL_NAME,
+        use_fp16: bool = USE_FP16,
+        max_length: int = MAX_LENGTH,
+        batch_size: int = BATCH_SIZE,
+    ):
+        from FlagEmbedding import BGEM3FlagModel
 
-    def _pad_vector(self, vec):
-        if len(vec) < VECTOR_DIM:
-            vec = vec + [0.0] * (VECTOR_DIM - len(vec))
-        elif len(vec) > VECTOR_DIM:
-            vec = vec[:VECTOR_DIM]
-        return vec
+        self.model_name = model_name
+        self.use_fp16 = use_fp16
+        self.max_length = max_length
+        self.batch_size = batch_size
+        self.model = BGEM3FlagModel(model_name, use_fp16=use_fp16)
 
     def embed_texts(self, texts: List[str]) -> List[List[float]]:
-        vecs = self.model.encode(texts)
+        if not texts:
+            return []
 
-        result = []
-        for v in vecs:
-            v = list(map(float, v))
-            v = self._pad_vector(v)
-            result.append(v)
-
-        return result
+        out = self.model.encode(
+            texts,
+            batch_size=self.batch_size,
+            max_length=self.max_length,
+            return_dense=True,
+            return_sparse=False,
+            return_colbert_vecs=False,
+        )
+        dense = out["dense_vecs"]
+        return [list(map(float, vec)) for vec in dense]
 
 
 def build_embedder(mode: str = EMBEDDING_MODE) -> BaseEmbedder:
@@ -294,26 +277,20 @@ def enrich_docs_with_embeddings_if_needed(
     return docs
 
 
-# def infer_vector_dim_from_docs_or_embedder(docs: List[Dict[str, Any]], embedder: BaseEmbedder) -> int:
-#     for d in docs:
-#         emb = d.get("embedding")
-#         if emb:
-#             return len(emb)
-#     return len(embedder.embed_query("테스트 질의"))
-
-def infer_vector_dim_from_docs_or_embedder(docs, embedder):
-    return VECTOR_DIM
+def infer_vector_dim_from_docs_or_embedder(docs: List[Dict[str, Any]], embedder: BaseEmbedder) -> int:
+    for d in docs:
+        emb = d.get("embedding")
+        if emb:
+            return len(emb)
+    return len(embedder.embed_query("테스트 질의"))
 
 
 # ---------------------------------------------------------------
 # Milvus
 # ---------------------------------------------------------------
-# def connect_milvus_lite(uri: str) -> MilvusClient:
-#     connections.disconnect("default")
-#     connections.connect(alias="default", uri=uri)
-#     return MilvusClient(uri=uri)
-
 def connect_milvus_lite(uri: str) -> MilvusClient:
+    connections.disconnect("default")
+    connections.connect(alias="default", uri=uri)
     return MilvusClient(uri=uri)
 
 
@@ -331,7 +308,7 @@ def create_docs_collection_if_needed(client: MilvusClient, collection_name: str,
         primary_field_name="id",
         id_type=DataType.INT64,
         vector_field_name="embedding",
-        metric_type="IP",
+        metric_type="COSINE",
         auto_id=False,
         enable_dynamic_field=True,
     )
@@ -347,7 +324,7 @@ def create_memory_collection_if_needed(client: MilvusClient, collection_name: st
         id_type=DataType.VARCHAR,
         max_length=128,
         vector_field_name="embedding",
-        metric_type="IP",
+        metric_type="COSINE",
         auto_id=False,
         enable_dynamic_field=True,
     )
@@ -392,7 +369,7 @@ def search_docs(
         data=[query_embedding],
         limit=top_k,
         output_fields=["id", "text", "metadata"],
-        search_params={"metric_type": "IP", "params": {}},
+        search_params={"metric_type": "COSINE", "params": {}},
     )
 
     docs = []
@@ -454,7 +431,7 @@ class EpisodicMemoryStore:
                 "answer_summary",
                 "memory_text",
             ],
-            search_params={"metric_type": "IP", "params": {}},
+            search_params={"metric_type": "COSINE", "params": {}},
         )
 
         recalled = []
@@ -603,24 +580,51 @@ def rag_pipeline(
     doc_collection_name: str = DOC_COLLECTION_NAME,
     top_k: int = DOC_TOP_K,
 ):
+
+    # 1️⃣ query normalize
+    user_query = preprocess_query(user_query)
+
+    # 2️⃣ recall episodic memory
     recalled_eps = memory_store.recall(
         conversation_id=conversation_id,
         user_query=user_query,
         top_k=MEMORY_TOP_K,
     )
 
+    # 3️⃣ rewrite query
     rewritten_query = rewrite_query(user_query, recalled_eps)
+
     if not rewritten_query or not str(rewritten_query).strip():
         rewritten_query = user_query
 
     final_query_for_search = rewritten_query.strip()
-    q_vec = embedder.embed_query(final_query_for_search)
 
-    retrieved_docs = search_docs(client, doc_collection_name, q_vec, top_k=top_k)
+    # 4️⃣ rewrite fallback
+    if not final_query_for_search:
+        final_query_for_search = user_query
 
+    # 5️⃣ BGE instruction (검색 recall 증가)
+    search_query = "지원사업 정책 검색: " + final_query_for_search
+
+    # 6️⃣ embedding
+    q_vec = embedder.embed_query(search_query)
+
+    # 7️⃣ vector search
+    retrieved_docs = search_docs(
+        client,
+        doc_collection_name,
+        q_vec,
+        top_k=top_k
+    )
+
+    # 8️⃣ answer generation
     answer = generate_answer(user_query, retrieved_docs)
+
+    # 9️⃣ memory summary
     memory_text = summarize_memory(user_query, answer)
+
     memory_embedding = embedder.embed_memory(memory_text)
+
     answer_summary = " ".join(answer.split())[:120]
 
     episode = Episode(
@@ -633,6 +637,7 @@ def rag_pipeline(
         memory_text=memory_text,
         memory_embedding=memory_embedding,
     )
+
     memory_store.save(episode)
 
     recalled_memory_list = []
@@ -763,7 +768,7 @@ with st.sidebar:
     st.markdown("---")
     st.write("샘플 질문")
     sample_queries = [
-        "청년 지원사업 있어?",
+        "청년 대상 사업 있어?",
         "서울 기준으로 다시 알려줘",
         "취업 관련만 보고 싶어",
         "마감된 건 빼줘",
