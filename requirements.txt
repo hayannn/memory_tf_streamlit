@@ -12,3 +12,4 @@ torch==2.2.2
 
 setuptools==70.0.0
 marshmallow==3.21.1
+numpy==1.26.4
