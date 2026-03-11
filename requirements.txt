@@ -1,10 +1,10 @@
 streamlit
-pymilvus
-milvus-lite
+pymilvus[milvus_lite]==2.4.4
 openai
-FlagEmbedding
+
+FlagEmbedding==1.2.11
 peft==0.10.0
 
 transformers==4.38.2
 sentence-transformers==2.6.1
-torch
+torch==2.2.2
