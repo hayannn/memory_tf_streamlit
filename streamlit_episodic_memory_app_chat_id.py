@@ -281,9 +281,12 @@ def infer_vector_dim_from_docs_or_embedder(docs: List[Dict[str, Any]], embedder:
 # ---------------------------------------------------------------
 # Milvus
 # ---------------------------------------------------------------
+# def connect_milvus_lite(uri: str) -> MilvusClient:
+#     connections.disconnect("default")
+#     connections.connect(alias="default", uri=uri)
+#     return MilvusClient(uri=uri)
+
 def connect_milvus_lite(uri: str) -> MilvusClient:
-    connections.disconnect("default")
-    connections.connect(alias="default", uri=uri)
     return MilvusClient(uri=uri)
 
 
