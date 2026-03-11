@@ -19,8 +19,9 @@ DEFAULT_OP_PKL_PATH = "./data/kpfis_op_embed_merged_200.pkl"
 DEFAULT_RAW_JSON_PATH = ""
 
 EMBEDDING_MODE = "local_flagembedding"
-MODEL_NAME = "BAAI/bge-m3"
-# MODEL_NAME = "BAAI/bge-small-en-v1.5"
+# MODEL_NAME = "BAAI/bge-m3"
+MODEL_NAME = "BAAI/bge-small-en-v1.5"
+VECTOR_DIM = 1024
 
 USE_FP16 = False
 MAX_LENGTH = 1024
@@ -106,36 +107,59 @@ class BaseEmbedder(ABC):
         return self.embed_texts([text])[0]
 
 
-class LocalFlagEmbeddingEmbedder(BaseEmbedder):
-    def __init__(
-        self,
-        model_name: str = MODEL_NAME,
-        use_fp16: bool = USE_FP16,
-        max_length: int = MAX_LENGTH,
-        batch_size: int = BATCH_SIZE,
-    ):
-        from FlagEmbedding import BGEM3FlagModel
+# class LocalFlagEmbeddingEmbedder(BaseEmbedder):
+#     def __init__(
+#         self,
+#         model_name: str = MODEL_NAME,
+#         use_fp16: bool = USE_FP16,
+#         max_length: int = MAX_LENGTH,
+#         batch_size: int = BATCH_SIZE,
+#     ):
+#         from FlagEmbedding import BGEM3FlagModel
 
-        self.model_name = model_name
-        self.use_fp16 = use_fp16
-        self.max_length = max_length
-        self.batch_size = batch_size
-        self.model = BGEM3FlagModel(model_name, use_fp16=use_fp16)
+#         self.model_name = model_name
+#         self.use_fp16 = use_fp16
+#         self.max_length = max_length
+#         self.batch_size = batch_size
+#         self.model = BGEM3FlagModel(model_name, use_fp16=use_fp16)
+
+#     def embed_texts(self, texts: List[str]) -> List[List[float]]:
+#         if not texts:
+#             return []
+
+#         out = self.model.encode(
+#             texts,
+#             batch_size=self.batch_size,
+#             max_length=self.max_length,
+#             return_dense=True,
+#             return_sparse=False,
+#             return_colbert_vecs=False,
+#         )
+#         dense = out["dense_vecs"]
+#         return [list(map(float, vec)) for vec in dense]
+
+class LocalFlagEmbeddingEmbedder(BaseEmbedder):
+    def __init__(self, model_name: str = MODEL_NAME):
+        from FlagEmbedding import FlagModel
+        self.model = FlagModel(model_name)
+
+    def _pad_vector(self, vec):
+        if len(vec) < VECTOR_DIM:
+            vec = vec + [0.0] * (VECTOR_DIM - len(vec))
+        elif len(vec) > VECTOR_DIM:
+            vec = vec[:VECTOR_DIM]
+        return vec
 
     def embed_texts(self, texts: List[str]) -> List[List[float]]:
-        if not texts:
-            return []
+        vecs = self.model.encode(texts)
 
-        out = self.model.encode(
-            texts,
-            batch_size=self.batch_size,
-            max_length=self.max_length,
-            return_dense=True,
-            return_sparse=False,
-            return_colbert_vecs=False,
-        )
-        dense = out["dense_vecs"]
-        return [list(map(float, vec)) for vec in dense]
+        result = []
+        for v in vecs:
+            v = list(map(float, v))
+            v = self._pad_vector(v)
+            result.append(v)
+
+        return result
 
 
 def build_embedder(mode: str = EMBEDDING_MODE) -> BaseEmbedder:
@@ -270,12 +294,15 @@ def enrich_docs_with_embeddings_if_needed(
     return docs
 
 
-def infer_vector_dim_from_docs_or_embedder(docs: List[Dict[str, Any]], embedder: BaseEmbedder) -> int:
-    for d in docs:
-        emb = d.get("embedding")
-        if emb:
-            return len(emb)
-    return len(embedder.embed_query("테스트 질의"))
+# def infer_vector_dim_from_docs_or_embedder(docs: List[Dict[str, Any]], embedder: BaseEmbedder) -> int:
+#     for d in docs:
+#         emb = d.get("embedding")
+#         if emb:
+#             return len(emb)
+#     return len(embedder.embed_query("테스트 질의"))
+
+def infer_vector_dim_from_docs_or_embedder(docs, embedder):
+    return VECTOR_DIM
 
 
 # ---------------------------------------------------------------
