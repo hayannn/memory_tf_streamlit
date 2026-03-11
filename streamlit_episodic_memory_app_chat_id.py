@@ -8,7 +8,7 @@ from typing import List, Dict, Any, Optional
 from abc import ABC, abstractmethod
 
 import streamlit as st
-from pymilvus import MilvusClient, DataType, connections
+from pymilvus import MilvusClient, DataType
 from openai import OpenAI
 
 # ---------------------------------------------------------------
@@ -19,8 +19,8 @@ DEFAULT_OP_PKL_PATH = "./data/kpfis_op_embed_merged_200.pkl"
 DEFAULT_RAW_JSON_PATH = ""
 
 EMBEDDING_MODE = "local_flagembedding"
-MODEL_NAME = "BAAI/bge-m3"
-# MODEL_NAME = "BAAI/bge-small-en-v1.5"
+# MODEL_NAME = "BAAI/bge-m3"
+MODEL_NAME = "BAAI/bge-small-en-v1.5"
 
 USE_FP16 = False
 MAX_LENGTH = 1024
@@ -38,6 +38,7 @@ TRACK_KEYWORDS = [
     "창업", "주거", "접수 중", "마감", "지원사업"
 ]
 
+
 def preprocess_query(q: str) -> str:
     q = q.replace("있어?", "")
     q = q.replace("있나요?", "")
@@ -49,7 +50,6 @@ def preprocess_query(q: str) -> str:
 
 CHAT_STORE_DIR = "./chat_store"
 os.makedirs(CHAT_STORE_DIR, exist_ok=True)
-
 
 # ---------------------------------------------------------------
 # Chat ID / Chat Store
@@ -290,11 +290,6 @@ def infer_vector_dim_from_docs_or_embedder(docs: List[Dict[str, Any]], embedder:
 # ---------------------------------------------------------------
 # Milvus
 # ---------------------------------------------------------------
-# def connect_milvus_lite(uri: str) -> MilvusClient:
-#     connections.disconnect("default")
-#     connections.connect(alias="default", uri=uri)
-#     return MilvusClient(uri=uri)
-
 def connect_milvus_lite(uri: str) -> MilvusClient:
     return MilvusClient(uri=uri)
 
@@ -304,9 +299,44 @@ def drop_collection_if_exists(client: MilvusClient, collection_name: str):
         client.drop_collection(collection_name)
 
 
+def get_collection_dimension(client: MilvusClient, collection_name: str) -> Optional[int]:
+    if not client.has_collection(collection_name):
+        return None
+
+    try:
+        info = client.describe_collection(collection_name)
+        if isinstance(info, dict):
+            if "dimension" in info:
+                return int(info["dimension"])
+            schema = info.get("schema", {})
+            if isinstance(schema, dict):
+                fields = schema.get("fields", [])
+                for field in fields:
+                    params = field.get("params", {})
+                    if "dim" in params:
+                        return int(params["dim"])
+    except Exception:
+        pass
+
+    return None
+
+
+def recreate_collection_if_dimension_mismatch(
+    client: MilvusClient,
+    collection_name: str,
+    expected_dim: int,
+):
+    existing_dim = get_collection_dimension(client, collection_name)
+    if existing_dim is None:
+        return
+    if existing_dim != expected_dim:
+        client.drop_collection(collection_name)
+
+
 def create_docs_collection_if_needed(client: MilvusClient, collection_name: str, dim: int):
     if client.has_collection(collection_name):
         return
+
     client.create_collection(
         collection_name=collection_name,
         dimension=dim,
@@ -322,6 +352,7 @@ def create_docs_collection_if_needed(client: MilvusClient, collection_name: str,
 def create_memory_collection_if_needed(client: MilvusClient, collection_name: str, dim: int):
     if client.has_collection(collection_name):
         return
+
     client.create_collection(
         collection_name=collection_name,
         dimension=dim,
@@ -350,6 +381,7 @@ def insert_docs_to_milvus(client: MilvusClient, collection_name: str, docs: List
 def clear_collection_data(client: MilvusClient, collection_name: str):
     if not client.has_collection(collection_name):
         return
+
     filt = "id != ''" if collection_name == MEMORY_COLLECTION_NAME else "id >= 0"
     client.delete(collection_name=collection_name, filter=filt)
 
@@ -357,6 +389,7 @@ def clear_collection_data(client: MilvusClient, collection_name: str):
 def clear_memory_by_conversation(client: MilvusClient, collection_name: str, conversation_id: str):
     if not client.has_collection(collection_name):
         return
+
     client.delete(
         collection_name=collection_name,
         filter=f'conversation_id == "{conversation_id}"'
@@ -585,18 +618,14 @@ def rag_pipeline(
     doc_collection_name: str = DOC_COLLECTION_NAME,
     top_k: int = DOC_TOP_K,
 ):
-
-    # 1️⃣ query normalize
     user_query = preprocess_query(user_query)
 
-    # 2️⃣ recall episodic memory
     recalled_eps = memory_store.recall(
         conversation_id=conversation_id,
         user_query=user_query,
         top_k=MEMORY_TOP_K,
     )
 
-    # 3️⃣ rewrite query
     rewritten_query = rewrite_query(user_query, recalled_eps)
 
     if not rewritten_query or not str(rewritten_query).strip():
@@ -604,17 +633,13 @@ def rag_pipeline(
 
     final_query_for_search = rewritten_query.strip()
 
-    # 4️⃣ rewrite fallback
     if not final_query_for_search:
         final_query_for_search = user_query
 
-    # 5️⃣ BGE instruction (검색 recall 증가)
     search_query = "지원사업 정책 검색: " + final_query_for_search
 
-    # 6️⃣ embedding
     q_vec = embedder.embed_query(search_query)
 
-    # 7️⃣ vector search
     retrieved_docs = search_docs(
         client,
         doc_collection_name,
@@ -622,14 +647,10 @@ def rag_pipeline(
         top_k=top_k
     )
 
-    # 8️⃣ answer generation
     answer = generate_answer(user_query, retrieved_docs)
 
-    # 9️⃣ memory summary
     memory_text = summarize_memory(user_query, answer)
-
     memory_embedding = embedder.embed_memory(memory_text)
-
     answer_summary = " ".join(answer.split())[:120]
 
     episode = Episode(
@@ -681,13 +702,19 @@ def build_runtime(
 ):
     embedder = build_embedder(EMBEDDING_MODE)
     docs = load_docs(bene_pkl_path, op_pkl_path, raw_json_path)
-    docs = enrich_docs_with_embeddings_if_needed(docs=docs, embedder=embedder, batch_size=BATCH_SIZE)
+    docs = enrich_docs_with_embeddings_if_needed(
+        docs=docs,
+        embedder=embedder,
+        batch_size=BATCH_SIZE
+    )
     vector_dim = infer_vector_dim_from_docs_or_embedder(docs, embedder)
 
     client = connect_milvus_lite(milvus_uri)
 
     if reindex_docs:
         drop_collection_if_exists(client, DOC_COLLECTION_NAME)
+
+    recreate_collection_if_dimension_mismatch(client, DOC_COLLECTION_NAME, vector_dim)
     create_docs_collection_if_needed(client, DOC_COLLECTION_NAME, vector_dim)
 
     if reindex_docs:
@@ -699,6 +726,8 @@ def build_runtime(
 
     if reset_memory:
         drop_collection_if_exists(client, MEMORY_COLLECTION_NAME)
+
+    recreate_collection_if_dimension_mismatch(client, MEMORY_COLLECTION_NAME, vector_dim)
     create_memory_collection_if_needed(client, MEMORY_COLLECTION_NAME, vector_dim)
 
     memory_store = EpisodicMemoryStore(
@@ -714,6 +743,7 @@ def build_runtime(
         "doc_count": len(docs),
         "vector_dim": vector_dim,
         "milvus_uri": milvus_uri,
+        "model_name": getattr(embedder, "model_name", "unknown"),
     }
 
 
@@ -801,13 +831,15 @@ except Exception as e:
     error_box.error(f"초기화 실패: {e}")
 
 if runtime:
-    col1, col2, col3 = st.columns([1, 1, 2])
+    col1, col2, col3, col4 = st.columns([1, 1, 2, 2])
     with col1:
         st.metric("문서 수", runtime["doc_count"])
     with col2:
         st.metric("벡터 차원", runtime["vector_dim"])
     with col3:
         st.write(f"Milvus: `{runtime['milvus_uri']}`")
+    with col4:
+        st.write(f"Model: `{runtime['model_name']}`")
 
     st.info(f"현재 chat_id: {chat_id}")
 
