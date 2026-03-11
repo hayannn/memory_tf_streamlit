@@ -26,7 +26,7 @@ USE_FP16 = False
 MAX_LENGTH = 1024
 BATCH_SIZE = 2
 
-DEFAULT_MILVUS_URI = "./episodic_memory_local.db"
+DEFAULT_MILVUS_URI = "./episodic_memory_local_dev.db"
 DOC_COLLECTION_NAME = "policy_docs_demo_dev"
 MEMORY_COLLECTION_NAME = "episodic_memory_demo_dev"
 
