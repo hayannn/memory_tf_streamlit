@@ -19,7 +19,9 @@ DEFAULT_OP_PKL_PATH = "./data/kpfis_op_embed_merged_200.pkl"
 DEFAULT_RAW_JSON_PATH = ""
 
 EMBEDDING_MODE = "local_flagembedding"
-MODEL_NAME = "BAAI/bge-m3"
+# MODEL_NAME = "BAAI/bge-m3"
+MODEL_NAME = "BAAI/bge-small-en-v1.5"
+
 USE_FP16 = False
 MAX_LENGTH = 1024
 BATCH_SIZE = 2
