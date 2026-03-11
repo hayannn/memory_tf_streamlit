@@ -11,3 +11,4 @@ sentence-transformers==2.6.1
 torch==2.2.2
 
 setuptools==70.0.0
+marshmallow==3.21.1
