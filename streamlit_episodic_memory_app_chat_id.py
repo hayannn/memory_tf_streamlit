@@ -290,9 +290,13 @@ def infer_vector_dim_from_docs_or_embedder(docs: List[Dict[str, Any]], embedder:
 # ---------------------------------------------------------------
 # Milvus
 # ---------------------------------------------------------------
-def connect_milvus_lite(uri: str) -> MilvusClient:
-    return MilvusClient(uri=uri)
+# def connect_milvus_lite(uri: str) -> MilvusClient:
+#     return MilvusClient(uri=uri)
 
+def connect_milvus_lite(uri: str) -> MilvusClient:
+    if os.path.exists(uri):
+        os.remove(uri)
+    return MilvusClient(uri=uri)
 
 def drop_collection_if_exists(client: MilvusClient, collection_name: str):
     if client.has_collection(collection_name):
