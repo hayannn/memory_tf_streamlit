@@ -27,8 +27,8 @@ MAX_LENGTH = 1024
 BATCH_SIZE = 2
 
 DEFAULT_MILVUS_URI = "./episodic_memory_local.db"
-DOC_COLLECTION_NAME = "policy_docs_demo"
-MEMORY_COLLECTION_NAME = "episodic_memory_demo"
+DOC_COLLECTION_NAME = "policy_docs_demo_dev"
+MEMORY_COLLECTION_NAME = "episodic_memory_demo_dev"
 
 DOC_TOP_K = 5
 MEMORY_TOP_K = 3
