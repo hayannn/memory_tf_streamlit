@@ -237,21 +237,53 @@ def connect_milvus(uri):
     return MilvusClient(uri=uri)
 
 
+# def create_collection(client, name, dim, id_type):
+
+#     if client.has_collection(name):
+#         return
+
+#     client.create_collection(
+#         collection_name=name,
+#         dimension=dim,
+#         primary_field_name="id",
+#         id_type=id_type,
+#         vector_field_name="embedding",
+#         metric_type="IP",
+#         auto_id=False,
+#         enable_dynamic_field=True
+#     )
+
 def create_collection(client, name, dim, id_type):
 
     if client.has_collection(name):
         return
 
-    client.create_collection(
-        collection_name=name,
-        dimension=dim,
-        primary_field_name="id",
-        id_type=id_type,
-        vector_field_name="embedding",
-        metric_type="IP",
-        auto_id=False,
-        enable_dynamic_field=True
-    )
+    if id_type == DataType.VARCHAR:
+
+        client.create_collection(
+            collection_name=name,
+            dimension=dim,
+            primary_field_name="id",
+            id_type=id_type,
+            max_length=128,
+            vector_field_name="embedding",
+            metric_type="IP",
+            auto_id=False,
+            enable_dynamic_field=True
+        )
+
+    else:
+
+        client.create_collection(
+            collection_name=name,
+            dimension=dim,
+            primary_field_name="id",
+            id_type=id_type,
+            vector_field_name="embedding",
+            metric_type="IP",
+            auto_id=False,
+            enable_dynamic_field=True
+        )
 
 
 # ---------------------------------------------------------------
