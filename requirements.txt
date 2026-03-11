@@ -1,5 +1,5 @@
 streamlit
-pymilvus
+pymilvus[milvus_lite]
 openai
 FlagEmbedding
 peft==0.10.0
