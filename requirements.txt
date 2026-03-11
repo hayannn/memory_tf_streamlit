@@ -1,0 +1,5 @@
+streamlit
+pymilvus>=2.4
+openai>=1.0
+FlagEmbedding
+torch
